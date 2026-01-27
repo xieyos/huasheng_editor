@@ -528,7 +528,49 @@ const editorApp = createApp({
       // 小红书相关
       previewMode: 'wechat',  // 预览模式：'wechat' 或 'xiaohongshu'
       xiaohongshuImages: [],  // 生成的小红书图片数组
-      xiaohongshuGenerating: false  // 是否正在生成小红书图片
+      xiaohongshuGenerating: false,  // 是否正在生成小红书图片
+      // 右下角浮动广告
+      floatingAd: {
+        ads: [
+          {
+            id: 'yinhe',
+            icon: '🎬',
+            title: '银河录像局',
+            subtitle: 'ChatGPT/Netflix/Claude 一站合租',
+            tag: '93折',
+            tagColor: 'orange',
+            link: 'https://nf.video/o9jj0s',
+            coupon: 'huasheng'
+          },
+          {
+            id: 'huanqiu',
+            icon: '🌍',
+            title: '环球巴士',
+            subtitle: 'ChatGPT Plus合租 35元/月',
+            tag: '热门',
+            tagColor: 'blue',
+            link: 'https://universalbus.cn/?s=5HCba2gPfO',
+            coupon: null
+          },
+          {
+            id: 'zsxq',
+            icon: '🔥',
+            title: 'AI编程知识星球',
+            subtitle: '1500+人已加入 / 限量30元券',
+            tag: '限时335元',
+            tagColor: 'purple',
+            link: 'https://t.zsxq.com/K3vsN',
+            coupon: '30元优惠券'
+          }
+        ],
+        isExpanded: false,
+        isVisible: false,
+        currentIndex: 0
+      },
+      // 文章历史记录
+      articleHistory: [],           // 历史文章列表
+      showHistoryPanel: false,      // 侧边栏显示状态
+      currentArticleId: null        // 当前编辑的文章ID（用于防止重复保存）
     };
   },
 
@@ -538,6 +580,12 @@ const editorApp = createApp({
 
     // 加载用户偏好设置
     this.loadUserPreferences();
+
+    // 加载文章历史记录
+    this.loadArticleHistory();
+
+    // 初始化浮动广告
+    this.initFloatingAd();
 
     // 初始化图片存储管理器
     this.imageStore = new ImageStore();
@@ -597,6 +645,25 @@ const editorApp = createApp({
     });
   },
 
+  beforeUnmount() {
+    this.stopFloatingAdRotation();
+  },
+
+  computed: {
+    currentFloatingAd() {
+      if (!this.floatingAd || !this.floatingAd.ads || this.floatingAd.ads.length === 0) {
+        return {
+          icon: '',
+          title: '',
+          tag: '',
+          tagColor: 'orange'
+        };
+      }
+
+      return this.floatingAd.ads[this.floatingAd.currentIndex] || this.floatingAd.ads[0];
+    }
+  },
+
   watch: {
     currentStyle() {
       if (this.md) {
@@ -605,7 +672,7 @@ const editorApp = createApp({
       // 保存样式偏好
       this.saveUserPreferences();
     },
-    markdownInput() {
+    markdownInput(newVal, oldVal) {
       if (this.md) {
         this.renderMarkdown();
       }
@@ -614,6 +681,15 @@ const editorApp = createApp({
       this._saveTimeout = setTimeout(() => {
         this.saveUserPreferences();
       }, 1000); // 1秒后保存
+
+      // 当内容被清空时，重置当前文章ID（下次保存会创建新文章）
+      if (!newVal || !newVal.trim()) {
+        this.currentArticleId = null;
+      }
+      // 当从空内容粘贴大量内容时，也视为新文章
+      else if ((!oldVal || oldVal.trim().length < 10) && newVal.trim().length > 100) {
+        this.currentArticleId = null;
+      }
     }
   },
 
@@ -664,6 +740,83 @@ const editorApp = createApp({
         localStorage.setItem('markdownInput', this.markdownInput);
       } catch (error) {
         console.error('保存用户偏好失败:', error);
+      }
+    },
+
+    // 初始化浮动广告
+    initFloatingAd() {
+      let shouldShow = true;
+      try {
+        const closed = localStorage.getItem('floatingAdClosed');
+        if (closed) {
+          const closedTime = parseInt(closed, 10);
+          if (!Number.isNaN(closedTime)) {
+            shouldShow = Date.now() - closedTime >= 24 * 60 * 60 * 1000;
+          }
+        }
+      } catch (error) {
+        console.warn('读取浮动广告状态失败:', error);
+      }
+
+      if (!shouldShow) {
+        this.floatingAd.isVisible = false;
+        return;
+      }
+
+      setTimeout(() => {
+        this.floatingAd.isVisible = true;
+      }, 3000);
+
+      this.startFloatingAdRotation();
+    },
+
+    startFloatingAdRotation() {
+      if (this.floatingAdTimer) {
+        clearInterval(this.floatingAdTimer);
+      }
+
+      if (!this.floatingAd.ads || this.floatingAd.ads.length <= 1) {
+        return;
+      }
+
+      this.floatingAdTimer = setInterval(() => {
+        if (this.floatingAd.isVisible && !this.floatingAd.isExpanded) {
+          this.floatingAd.currentIndex = (this.floatingAd.currentIndex + 1) % this.floatingAd.ads.length;
+        }
+      }, 5000);
+    },
+
+    stopFloatingAdRotation() {
+      if (this.floatingAdTimer) {
+        clearInterval(this.floatingAdTimer);
+        this.floatingAdTimer = null;
+      }
+    },
+
+    toggleFloatingAd() {
+      this.floatingAd.isExpanded = !this.floatingAd.isExpanded;
+    },
+
+    closeFloatingAd() {
+      this.floatingAd.isVisible = false;
+      try {
+        localStorage.setItem('floatingAdClosed', Date.now().toString());
+      } catch (error) {
+        console.warn('保存浮动广告状态失败:', error);
+      }
+    },
+
+    openFloatingAd(ad) {
+      if (!ad || !ad.link) {
+        return;
+      }
+
+      window.open(ad.link, '_blank', 'noopener,noreferrer');
+    },
+
+    setFloatingAdIndex(index) {
+      if (index >= 0 && index < this.floatingAd.ads.length) {
+        this.floatingAd.currentIndex = index;
       }
     },
 
@@ -786,6 +939,28 @@ const markdown = \`![图片](img://\${imageId})\`;
     },
 
     preprocessMarkdown(content) {
+      // 规范化水平分割线格式（修复从飞书等复制时的解析问题）
+      // 匹配 * * *、- - -、_ _ _ 等格式（包括带空格的变体）
+      // 确保它们被正确解析为 <hr> 而非无序列表
+      content = content.replace(/^[ ]{0,3}(\*[ ]*\*[ ]*\*[\* ]*)[ \t]*$/gm, '***');
+      content = content.replace(/^[ ]{0,3}(-[ ]*-[ ]*-[- ]*)[ \t]*$/gm, '---');
+      content = content.replace(/^[ ]{0,3}(_[ ]*_[ ]*_[_ ]*)[ \t]*$/gm, '___');
+
+      // 修复飞书等复制时的加粗格式断裂问题
+      // 例如：**text** **more** -> **text more**（合并相邻的加粗片段）
+      // 处理 **空白** (结束后紧跟开始，中间有任意空白) -> 单个空格
+      content = content.replace(/\*\*\s+\*\*/g, ' ');
+      // 处理 **** 或更多连续星号（通常是格式错误）-> 移除
+      content = content.replace(/\*{4,}/g, '');
+      // 处理 word** 或 **word 紧贴标点的情况（中文标点）
+      // 在中文右标点前的 ** 后添加零宽空格，帮助解析
+      content = content.replace(/\*\*([）」』》〉】〕〗］｝"'。，、；：？！])/g, '**\u200B$1');
+      // 在中文左标点后的 ** 前添加零宽空格
+      content = content.replace(/([（「『《〈【〔〖［｛"'])\*\*/g, '$1\u200B**');
+      // 同样处理下划线格式
+      content = content.replace(/__\s+__/g, ' ');
+      content = content.replace(/_{4,}/g, '');
+
       // 规范化列表项格式
       content = content.replace(/^(\s*(?:\d+\.|-|\*)\s+[^:\n]+)\n\s*:\s*(.+?)$/gm, '$1: $2');
       content = content.replace(/^(\s*(?:\d+\.|-|\*)\s+.+?:)\s*\n\s+(.+?)$/gm, '$1 $2');
@@ -856,6 +1031,24 @@ const markdown = \`![图片](img://\${imageId})\`;
       const style = STYLES[this.currentStyle].styles;
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
+      const headingInlineOverrides = {
+        strong: 'font-weight: 700; color: inherit !important; background-color: transparent !important;',
+        em: 'font-style: italic; color: inherit !important; background-color: transparent !important;',
+        a: 'color: inherit !important; text-decoration: none !important; border-bottom: 1px solid currentColor !important; background-color: transparent !important;',
+        code: 'color: inherit !important; background-color: transparent !important; border: none !important; padding: 0 !important;',
+        span: 'color: inherit !important; background-color: transparent !important;',
+        b: 'font-weight: 700; color: inherit !important; background-color: transparent !important;',
+        i: 'font-style: italic; color: inherit !important; background-color: transparent !important;',
+        del: 'color: inherit !important; background-color: transparent !important;',
+        mark: 'color: inherit !important; background-color: transparent !important;',
+        s: 'color: inherit !important; background-color: transparent !important;',
+        u: 'color: inherit !important; text-decoration: underline !important; background-color: transparent !important;',
+        ins: 'color: inherit !important; text-decoration: underline !important; background-color: transparent !important;',
+        kbd: 'color: inherit !important; background-color: transparent !important; border: none !important; padding: 0 !important;',
+        sub: 'color: inherit !important; background-color: transparent !important;',
+        sup: 'color: inherit !important; background-color: transparent !important;'
+      };
+      const headingInlineSelectorList = Object.keys(headingInlineOverrides).join(', ');
 
       // 先处理图片网格布局（在应用样式之前）
       this.groupConsecutiveImages(doc);
@@ -875,6 +1068,31 @@ const markdown = \`![图片](img://\${imageId})\`;
 
           const currentStyle = el.getAttribute('style') || '';
           el.setAttribute('style', currentStyle + '; ' + style[selector]);
+        });
+      });
+
+      // 标题内的行内元素统一继承标题颜色，避免各主题样式冲突
+      const headings = doc.querySelectorAll('h1, h2, h3, h4, h5, h6');
+      headings.forEach(heading => {
+        const inlineNodes = heading.querySelectorAll(headingInlineSelectorList);
+        inlineNodes.forEach(node => {
+          const tag = node.tagName.toLowerCase();
+          let override = headingInlineOverrides[tag];
+          if (!override) {
+            return;
+          }
+
+          const currentStyle = node.getAttribute('style') || '';
+          const sanitizedStyle = currentStyle
+            .replace(/color:\s*[^;]+;?/gi, '')
+            .replace(/background(?:-color)?:\s*[^;]+;?/gi, '')
+            .replace(/border(?:-bottom)?:\s*[^;]+;?/gi, '')
+            .replace(/text-decoration:\s*[^;]+;?/gi, '')
+            .replace(/box-shadow:\s*[^;]+;?/gi, '')
+            .replace(/padding:\s*[^;]+;?/gi, '')
+            .replace(/;\s*;/g, ';')
+            .trim();
+          node.setAttribute('style', sanitizedStyle + '; ' + override);
         });
       });
 
@@ -1322,6 +1540,26 @@ const markdown = \`![图片](img://\${imageId})\`;
           li.setAttribute('style', currentStyle);
         });
 
+        // 深色模式适配：调整引用块样式，使用透明黑色让微信自动转换
+        const blockquotes = doc.querySelectorAll('blockquote');
+        blockquotes.forEach(blockquote => {
+          const currentStyle = blockquote.getAttribute('style') || '';
+
+          // 移除现有的背景色和文字颜色
+          let newStyle = currentStyle
+            .replace(/background(?:-color)?:\s*[^;]+;?/gi, '')
+            .replace(/color:\s*[^;]+;?/gi, '');
+
+          // 添加深色模式友好的样式
+          // 使用半透明黑色背景和文字，微信会在深色模式下自动反转
+          newStyle += '; background: rgba(0, 0, 0, 0.05) !important';
+          newStyle += '; color: rgba(0, 0, 0, 0.8) !important';
+
+          // 清理多余的分号
+          newStyle = newStyle.replace(/;\s*;/g, ';').replace(/^\s*;\s*|\s*;\s*$/g, '').trim();
+          blockquote.setAttribute('style', newStyle);
+        });
+
         const simplifiedHTML = doc.body.innerHTML;
         const plainText = doc.body.textContent || '';
 
@@ -1337,6 +1575,9 @@ const markdown = \`![图片](img://\${imageId})\`;
 
         this.copySuccess = true;
         this.showToast('复制成功', 'success');
+
+        // 自动保存到历史记录
+        this.saveToHistory();
 
         setTimeout(() => {
           this.copySuccess = false;
@@ -2407,6 +2648,209 @@ const markdown = \`![图片](img://\${imageId})\`;
       }
 
       this.showToast('批量下载完成', 'success');
+    },
+
+    // ==================== 文章历史记录功能 ====================
+
+    // 从 Markdown 内容提取标题
+    extractTitle(markdownContent) {
+      if (!markdownContent || !markdownContent.trim()) {
+        return '无标题';
+      }
+
+      // 尝试匹配第一个 # 标题
+      const titleMatch = markdownContent.match(/^#\s+(.+)$/m);
+      if (titleMatch && titleMatch[1]) {
+        // 清理标题中的 markdown 格式
+        let title = titleMatch[1].trim();
+        title = title.replace(/\*\*/g, '').replace(/\*/g, '').replace(/`/g, '');
+        return title.substring(0, 50); // 最多 50 字符
+      }
+
+      // 如果没有标题，取前 20 个字符
+      const cleanContent = markdownContent
+        .replace(/^!\[.*?\]\(.*?\)$/gm, '') // 移除图片
+        .replace(/^#+\s*/gm, '') // 移除标题标记
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // 移除链接格式
+        .replace(/[*_~`]/g, '') // 移除格式标记
+        .trim();
+
+      if (cleanContent) {
+        return cleanContent.substring(0, 20) + (cleanContent.length > 20 ? '...' : '');
+      }
+
+      return '无标题';
+    },
+
+    // 保存当前文章到历史记录
+    saveToHistory() {
+      const content = this.markdownInput;
+      if (!content || !content.trim()) {
+        this.showToast('内容为空，无法保存', 'error');
+        return;
+      }
+
+      const title = this.extractTitle(content);
+      const now = Date.now();
+
+      // 如果有当前文章ID，直接更新该文章
+      if (this.currentArticleId) {
+        const existingIndex = this.articleHistory.findIndex(
+          article => article.id === this.currentArticleId
+        );
+
+        if (existingIndex !== -1) {
+          // 更新已存在的文章
+          this.articleHistory[existingIndex].title = title;
+          this.articleHistory[existingIndex].content = content;
+          this.articleHistory[existingIndex].style = this.currentStyle;
+          this.articleHistory[existingIndex].updatedAt = now;
+
+          // 移到最前面
+          const article = this.articleHistory.splice(existingIndex, 1)[0];
+          this.articleHistory.unshift(article);
+
+          this.saveArticleHistory();
+          this.showToast('已更新历史记录', 'success');
+          return;
+        }
+      }
+
+      // 没有当前文章ID，创建新文章
+      const newArticleId = `article-${now}-${Math.random().toString(36).substring(2, 8)}`;
+      const newArticle = {
+        id: newArticleId,
+        title: title,
+        content: content,
+        style: this.currentStyle,
+        createdAt: now,
+        updatedAt: now
+      };
+
+      // 添加到列表开头
+      this.articleHistory.unshift(newArticle);
+
+      // 设置为当前文章
+      this.currentArticleId = newArticleId;
+
+      // 限制最多 20 篇
+      if (this.articleHistory.length > 20) {
+        this.articleHistory = this.articleHistory.slice(0, 20);
+      }
+
+      // 保存到 localStorage
+      this.saveArticleHistory();
+      this.showToast('已保存到历史记录', 'success');
+    },
+
+    // 从历史记录加载文章
+    loadFromHistory(articleId) {
+      const article = this.articleHistory.find(a => a.id === articleId);
+      if (!article) {
+        this.showToast('文章不存在', 'error');
+        return;
+      }
+
+      // 恢复内容和样式
+      this.markdownInput = article.content;
+      if (article.style && STYLES[article.style]) {
+        this.currentStyle = article.style;
+      }
+
+      // 设置当前文章ID，后续编辑会更新这篇文章
+      this.currentArticleId = articleId;
+
+      // 关闭侧边栏
+      this.showHistoryPanel = false;
+
+      this.showToast('已加载文章', 'success');
+    },
+
+    // 从历史记录删除文章
+    deleteFromHistory(articleId) {
+      const index = this.articleHistory.findIndex(a => a.id === articleId);
+      if (index === -1) {
+        this.showToast('文章不存在', 'error');
+        return;
+      }
+
+      this.articleHistory.splice(index, 1);
+      this.saveArticleHistory();
+      this.showToast('已删除', 'success');
+    },
+
+    // 从 localStorage 加载历史记录
+    loadArticleHistory() {
+      try {
+        const saved = localStorage.getItem('articleHistory');
+        if (saved) {
+          const data = JSON.parse(saved);
+          if (data && Array.isArray(data.articles)) {
+            this.articleHistory = data.articles;
+          }
+        }
+      } catch (error) {
+        console.error('加载历史记录失败:', error);
+        this.articleHistory = [];
+      }
+    },
+
+    // 保存历史记录到 localStorage
+    saveArticleHistory() {
+      try {
+        const data = {
+          articles: this.articleHistory
+        };
+        localStorage.setItem('articleHistory', JSON.stringify(data));
+      } catch (error) {
+        console.error('保存历史记录失败:', error);
+        this.showToast('保存历史记录失败', 'error');
+      }
+    },
+
+    // 切换历史记录侧边栏
+    toggleHistoryPanel() {
+      this.showHistoryPanel = !this.showHistoryPanel;
+    },
+
+    // 格式化历史记录时间显示
+    formatHistoryDate(timestamp) {
+      if (!timestamp) return '';
+
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diff = now - date;
+
+      // 不到 1 分钟
+      if (diff < 60 * 1000) {
+        return '刚刚';
+      }
+
+      // 不到 1 小时
+      if (diff < 60 * 60 * 1000) {
+        const minutes = Math.floor(diff / (60 * 1000));
+        return `${minutes} 分钟前`;
+      }
+
+      // 不到 24 小时
+      if (diff < 24 * 60 * 60 * 1000) {
+        const hours = Math.floor(diff / (60 * 60 * 1000));
+        return `${hours} 小时前`;
+      }
+
+      // 今年内
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hour = String(date.getHours()).padStart(2, '0');
+      const minute = String(date.getMinutes()).padStart(2, '0');
+
+      if (year === now.getFullYear()) {
+        return `${month}-${day} ${hour}:${minute}`;
+      }
+
+      // 往年
+      return `${year}-${month}-${day}`;
     }
   }
 });
